@@ -1,13 +1,13 @@
 {
     "name": "OpenMageModuleFostering/PedroTeixeira_Correios",
     "type": "magento-module",
-    "license": "GNU-General-Public-License-(GPL)",
+    "license": "MIT-License",
     "homepage": "",
     "description": "Módulo de cálculo de PAC, Sedex, E-Sedex, Sedex 10, Sedex Hoje e Sedex a Cobrar.",
     "authors": [
     {
         "name": "Pedro Teixeira",
-        "email": "teixeira.pedro@gmail.com"
+        "email": "hello@pedroteixeira.io"
     }
 ],
     "suggest": {

@@ -1,565 +1,656 @@
 <?php
+
 /**
- * Pedro Teixeira
+ * This source file is subject to the MIT License.
+ * It is also available through http://opensource.org/licenses/MIT
  *
- * NOTICE OF LICENSE
- *
- * This source file is subject to the Open Software License (OSL).
- * It is also available through the world-wide-web at this URL:
- * http://opensource.org/licenses/osl-3.0.php
- *
- * @category   PedroTeixeira
- * @package    PedroTeixeira_Correios
- * @copyright  Copyright (c) 2010 Pedro Teixeira (http://www.pteixeira.com.br)
- * @author     Pedro Teixeira <pedro@pteixeira.com.br>
- * @license    http://opensource.org/licenses/osl-3.0.php  Open Software License (OSL 3.0)
+ * @category  PedroTeixeira
+ * @package   PedroTeixeira_Correios
+ * @copyright Copyright (c) 2014 Pedro Teixeira (http://pedroteixeira.io)
+ * @author    Pedro Teixeira <hello@pedroteixeira.io>
+ * @license   http://opensource.org/licenses/MIT
  */
-
-/**
- * PedroTeixeira_Correios_Model_Carrier_CorreioMethod
- *
- * @category   PedroTeixeira
- * @package    PedroTeixeira_Correios
- * @author     Pedro Teixeira <pedro@pteixeira.com.br>
- */ 
-
-class ParametersLocaweb { }
-
 class PedroTeixeira_Correios_Model_Carrier_CorreiosMethod
     extends Mage_Shipping_Model_Carrier_Abstract
     implements Mage_Shipping_Model_Carrier_Interface
 {
+    /**
+     * _code property
+     *
+     * @var string
+     */
+    protected $_code = 'pedroteixeira_correios';
 
-	/**
-	 * _code property
-	 *
-	 * @var string
-	 */
-	protected $_code = 'pedroteixeira_correios';
-	
-	/**
-	 * _result property
-	 *
-	 * @var Mage_Shipping_Model_Rate_Result / Mage_Shipping_Model_Tracking_Result
-	 */
-	protected $_result = null;
+    /**
+     * _result property
+     *
+     * @var Mage_Shipping_Model_Rate_Result|Mage_Shipping_Model_Tracking_Result
+     */
+    protected $_result = null;
 
-	/**
-	 * Check if current carrier offer support to tracking
-	 *
-	 * @return boolean true
-	 */
-	public function isTrackingAvailable() {
-		return true;
-	}
+    /**
+     * ZIP code vars
+     */
+    protected $_fromZip = null;
+    protected $_toZip = null;
 
-	/**
-	 * Collect Rates
-	 *
-	 * @param Mage_Shipping_Model_Rate_Request $request
-	 * @return Mage_Shipping_Model_Rate_Result
-	 */
-	public function collectRates(Mage_Shipping_Model_Rate_Request $request)
-	{
-		if (!$this->getConfigFlag('active'))
-		{
-                    //Disabled
-                    Mage::log('PedroTeixeira_Correios: Disabled');
+    /**
+     * Value and Weight
+     */
+    protected $_packageValue = null;
+    protected $_packageWeight = null;
+    protected $_volumeWeight = null;
+    protected $_freeMethodWeight = null;
+
+    /**
+     * Post methods
+     */
+    protected $_postMethods = null;
+    protected $_postMethodsFixed = null;
+    protected $_postMethodsExplode = null;
+
+    /**
+     * Free method request
+     */
+    protected $_freeMethodRequest = false;
+    protected $_freeMethodRequestResult = null;
+
+    /**
+     * Collect Rates
+     *
+     * @param Mage_Shipping_Model_Rate_Request $request
+     *
+     * @return bool|Mage_Shipping_Model_Rate_Result|Mage_Shipping_Model_Tracking_Result
+     */
+    public function collectRates(Mage_Shipping_Model_Rate_Request $request)
+    {
+        // Do initial check
+        if ($this->_inicialCheck($request) === false) {
+            return false;
+        }
+
+        // Check package value
+        if ($this->_packageValue < $this->getConfigData('min_order_value')
+            || $this->_packageValue > $this->getConfigData('max_order_value')
+        ) {
+            $this->_throwError('valueerror', 'Value limits', __LINE__);
+            return $this->_result;
+        }
+
+        // Check ZIP Code
+        if (!preg_match('/^([0-9]{8})$/', $this->_toZip)) {
+            $this->_throwError('zipcodeerror', 'Invalid Zip Code', __LINE__);
+            return $this->_result;
+        }
+
+        // Fix weight
+        $weightCompare = $this->getConfigData('maxweight');
+        if ($this->getConfigData('weight_type') == PedroTeixeira_Correios_Model_Source_WeightType::WEIGHT_GR) {
+            $this->_packageWeight = number_format($this->_packageWeight / 1000, 2, '.', '');
+            $weightCompare        = number_format($weightCompare / 1000, 2, '.', '');
+        }
+
+        // Check weght
+        if ($this->_packageWeight > $weightCompare) {
+            $this->_throwError('maxweighterror', 'Weight exceeded limit', __LINE__);
+            return $this->_result;
+        }
+
+        // Check weight zero
+        if ($this->_packageWeight <= 0) {
+            $this->_throwError('weightzeroerror', 'Weight zero', __LINE__);
+            return $this->_result;
+        }
+
+        // Generate Volume Weight
+        if ($this->_generateVolumeWeight() === false) {
+            $this->_throwError('dimensionerror', 'Dimension error', __LINE__);
+            return $this->_result;
+        }
+
+        $this->_postMethods        = $this->getConfigData('postmethods');
+        $this->_postMethodsFixed   = $this->_postMethods;
+        $this->_postMethodsExplode = explode(',', $this->getConfigData('postmethods'));
+
+        if ($this->_getQuotes()->getError()) {
+            return $this->_result;
+        }
+
+        // Use descont codes
+        $this->_updateFreeMethodQuote($request);
+
+        return $this->_result;
+    }
+
+    /**
+     * Get shipping quote
+     *
+     * @return Mage_Shipping_Model_Rate_Result|Mage_Shipping_Model_Tracking_Result
+     */
+    protected function _getQuotes()
+    {
+        $softErrors     = explode(',', $this->getConfigData('soft_errors'));
+        $correiosReturn = $this->_getCorreiosReturn();
+
+        if ($correiosReturn !== false) {
+
+            $existReturn = false;
+
+            foreach ($correiosReturn as $servicos) {
+
+                $errorId = (string) $servicos->Erro;
+
+                if ($errorId != '0' && !in_array($errorId, $softErrors)) {
+                    continue;
+                }
+
+                $shippingPrice    = floatval(str_replace(',', '.', (string) $servicos->Valor));
+                $shippingDelivery = (int) $servicos->PrazoEntrega;
+
+                if ($shippingPrice <= 0) {
+                    continue;
+                }
+
+                $this->_apendShippingReturn((string) $servicos->Codigo, $shippingPrice, $shippingDelivery);
+                $existReturn = true;
+            }
+
+            if ($existReturn === false) {
+                $this->_throwError('urlerror', 'URL Error, all services return with error', __LINE__);
+                return $this->_result;
+            }
+        } else {
+            return $this->_result;
+        }
+
+        if ($this->_freeMethodRequest === true) {
+            return $this->_freeMethodRequestResult;
+        } else {
+            return $this->_result;
+        }
+    }
+
+    /**
+     * Make initial checks and iniciate module variables
+     *
+     * @param Mage_Shipping_Model_Rate_Request $request
+     *
+     * @return bool
+     */
+    protected function _inicialCheck(Mage_Shipping_Model_Rate_Request $request)
+    {
+
+        if (!$this->getConfigFlag('active')) {
+            // Disabled
+            Mage::log('pedroteixeira_correios: Disabled');
+            return false;
+        }
+
+        $origCountry = Mage::getStoreConfig('shipping/origin/country_id', $this->getStore());
+        $destCountry = $request->getDestCountryId();
+        if ($origCountry != 'BR' || $destCountry != 'BR') {
+            // Out of delivery area
+            Mage::log('pedroteixeira_correios: Out of delivery area');
+            return false;
+        }
+
+        $this->_fromZip = Mage::getStoreConfig('shipping/origin/postcode', $this->getStore());
+        $this->_toZip   = $request->getDestPostcode();
+
+        // Fix ZIP code
+        $this->_fromZip = str_replace(array('-', '.'), '', trim($this->_fromZip));
+        $this->_toZip   = str_replace(array('-', '.'), '', trim($this->_toZip));
+
+        if (!preg_match('/^([0-9]{8})$/', $this->_fromZip)) {
+            Mage::log('pedroteixeira_correios: From ZIP Code Error');
+            return false;
+        }
+
+        $this->_result = Mage::getModel('shipping/rate_result');
+        $this->_packageValue = $request->getBaseCurrency()->convert(
+            $request->getPackageValue(),
+            $request->getPackageCurrency()
+        );
+
+        $this->_packageWeight    = number_format($request->getPackageWeight(), 2, '.', '');
+        $this->_freeMethodWeight = number_format($request->getFreeMethodWeight(), 2, '.', '');
+    }
+
+    /**
+     * Get Correios return
+     *
+     * @return bool|SimpleXMLElement[]
+     */
+    protected function _getCorreiosReturn()
+    {
+        $filename      = $this->getConfigData('url_ws_correios');
+        $contratoCodes = explode(',', $this->getConfigData('contrato_codes'));
+
+        try {
+            $client = new Zend_Http_Client($filename);
+            $client->setConfig(
+                array(
+                    'timeout' => $this->getConfigData('ws_timeout')
+                )
+            );
+
+            $client->setParameterGet('StrRetorno', 'xml');
+            $client->setParameterGet('nCdServico', $this->_postMethods);
+
+            if ($this->_volumeWeight > $this->getConfigData('volume_weight_min')
+                && $this->_volumeWeight > $this->_packageWeight
+            ) {
+                $client->setParameterGet('nVlPeso', $this->_volumeWeight);
+            } else {
+                $client->setParameterGet('nVlPeso', $this->_packageWeight);
+            }
+
+            $client->setParameterGet('sCepOrigem', $this->_fromZip);
+            $client->setParameterGet('sCepDestino', $this->_toZip);
+            $client->setParameterGet('nCdFormato', 1);
+            $client->setParameterGet('nVlComprimento', $this->getConfigData('comprimento_sent'));
+            $client->setParameterGet('nVlAltura', $this->getConfigData('altura_sent'));
+            $client->setParameterGet('nVlLargura', $this->getConfigData('largura_sent'));
+
+            if ($this->getConfigData('mao_propria')) {
+                $client->setParameterGet('sCdMaoPropria', 'S');
+            } else {
+                $client->setParameterGet('sCdMaoPropria', 'N');
+            }
+
+            if ($this->getConfigData('aviso_recebimento')) {
+                $client->setParameterGet('sCdAvisoRecebimento', 'S');
+            } else {
+                $client->setParameterGet('sCdAvisoRecebimento', 'N');
+            }
+
+            if ($this->getConfigData('valor_declarado')
+                || in_array($this->getConfigData('acobrar_code'), $this->_postMethodsExplode)
+            ) {
+                $client->setParameterGet('nVlValorDeclarado', number_format($this->_packageValue, 2, ',', '.'));
+            } else {
+                $client->setParameterGet('nVlValorDeclarado', 0);
+            }
+
+            $contrato = false;
+            foreach ($contratoCodes as $contratoEach) {
+                if (in_array($contratoEach, $this->_postMethodsExplode)) {
+                    $contrato = true;
+                }
+            }
+
+            if ($contrato) {
+                if ($this->getConfigData('cod_admin') == '' || $this->getConfigData('senha_admin') == '') {
+                    $this->_throwError('coderror', 'Need correios admin data', __LINE__);
                     return false;
-		}
-		
+                } else {
+                    $client->setParameterGet('nCdEmpresa', $this->getConfigData('cod_admin'));
+                    $client->setParameterGet('sDsSenha', $this->getConfigData('senha_admin'));
+                }
+            }
 
-		$origCountry = Mage::getStoreConfig('shipping/origin/country_id', $this->getStore());
-		$destCountry = $request->getDestCountryId();
-		if ($origCountry != "BR" || $destCountry != "BR"){
-                    //Out of delivery area
-                    Mage::log('PedroTeixeira_Correios: Out of delivery area');
+            $content = $client->request()->getBody();
+
+            if ($content == '') {
+                throw new Exception('No XML returned [' . __LINE__ . ']');
+            }
+
+            libxml_use_internal_errors(true);
+            $sxe = simplexml_load_string($content);
+            if (!$sxe) {
+                throw new Exception('Bad XML [' . __LINE__ . ']');
+            }
+
+            $xml = new SimpleXMLElement($content);
+
+            if (count($xml->cServico) <= 0) {
+                throw new Exception('No tag cServico in Correios XML [' . __LINE__ . ']');
+            }
+
+            return $xml->cServico;
+        } catch (Exception $e) {
+            $this->_throwError('urlerror', 'URL Error - ' . $e->getMessage(), __LINE__);
+            return false;
+        }
+    }
+
+    /**
+     * Apend shipping value to return
+     *
+     * @param string $shipping_method
+     * @param int    $shippingPrice
+     * @param int    $correiosDelivery
+     *
+     * @return void
+     */
+    protected function _apendShippingReturn($shipping_method, $shippingPrice = 0, $correiosDelivery = 0)
+    {
+
+        $method = Mage::getModel('shipping/rate_result_method');
+        $method->setCarrier($this->_code);
+        $method->setCarrierTitle($this->getConfigData('title'));
+        $method->setMethod($shipping_method);
+
+        $shippingCost  = $shippingPrice;
+        $shippingPrice = $shippingPrice + $this->getConfigData('handling_fee');
+
+        $shipping_data = explode(',', $this->getConfigData('serv_' . $shipping_method));
+
+        if ($shipping_method == $this->getConfigData('acobrar_code')) {
+            $shipping_data[0] = $shipping_data[0] . ' ( R$' . number_format($shippingPrice, 2, ',', '.') . ' )';
+            $shippingPrice    = 0;
+        }
+
+        if ($this->getConfigFlag('prazo_entrega')) {
+            if ($correiosDelivery > 0) {
+                $method->setMethodTitle(
+                    sprintf(
+                        $this->getConfigData('msgprazo'),
+                        $shipping_data[0],
+                        (int) ($correiosDelivery + $this->getConfigData('add_prazo'))
+                    )
+                );
+            } else {
+                $method->setMethodTitle(
+                    sprintf(
+                        $this->getConfigData('msgprazo'),
+                        $shipping_data[0],
+                        (int) ($shipping_data[1] + $this->getConfigData('add_prazo'))
+                    )
+                );
+            }
+        } else {
+            $method->setMethodTitle($shipping_data[0]);
+        }
+
+        $method->setPrice($shippingPrice);
+        $method->setCost($shippingCost);
+
+        if ($this->_freeMethodRequest === true) {
+            $this->_freeMethodRequestResult->append($method);
+        } else {
+            $this->_result->append($method);
+        }
+    }
+
+    /**
+     * Throw error
+     *
+     * @param string     $message
+     * @param string     $log
+     * @param string|int $line
+     * @param string     $custom
+     */
+    protected function _throwError($message, $log = null, $line = 'NO LINE', $custom = null)
+    {
+        $this->_result = null;
+        $this->_result = Mage::getModel('shipping/rate_result');
+
+        $error = Mage::getModel('shipping/rate_result_error');
+        $error->setCarrier($this->_code);
+        $error->setCarrierTitle($this->getConfigData('title'));
+
+        if (is_null($custom) || $this->getConfigData($message) == '') {
+            Mage::log($this->_code . ' [' . $line . ']: ' . $log);
+            $error->setErrorMessage($this->getConfigData($message));
+        } else {
+            Mage::log($this->_code . ' [' . $line . ']: ' . $log);
+            $error->setErrorMessage(sprintf($this->getConfigData($message), $custom));
+        }
+
+        $this->_result->append($error);
+    }
+
+    /**
+     * Generate Volume weight
+     *
+     * @see http://www.correios.com.br/para-sua-empresa/comercio-eletronico/como-calcular-precos-e-prazos-de-entrega-em-sua-loja-on-line
+     *
+     * @return bool
+     */
+    protected function _generateVolumeWeight()
+    {
+        $pesoCubicoTotal = 0;
+
+        $items = Mage::getModel('checkout/cart')->getQuote()->getAllVisibleItems();
+
+        foreach ($items as $item) {
+            $_product = $item->getProduct();
+
+            if ($_product->getData('volume_altura') == '' || (int) $_product->getData('volume_altura') == 0) {
+                $itemAltura = $this->getConfigData('altura_padrao');
+            } else {
+                $itemAltura = $_product->getData('volume_altura');
+            }
+
+            if ($_product->getData('volume_largura') == '' || (int) $_product->getData('volume_largura') == 0) {
+                $itemLargura = $this->getConfigData('largura_padrao');
+            } else {
+                $itemLargura = $_product->getData('volume_largura');
+            }
+
+            if ($_product->getData('volume_comprimento') == '' || (int) $_product->getData('volume_comprimento') == 0) {
+                $itemComprimento = $this->getConfigData('comprimento_padrao');
+            } else {
+                $itemComprimento = $_product->getData('volume_comprimento');
+            }
+
+            if ($this->getConfigFlag('check_dimensions')) {
+                if ($itemAltura > $this->getConfigData('volume_validation/altura_max')
+                    || $itemAltura < $this->getConfigData('volume_validation/altura_min')
+                    || $itemLargura > $this->getConfigData('volume_validation/largura_max')
+                    || $itemLargura < $this->getConfigData('volume_validation/largura_min')
+                    || $itemComprimento > $this->getConfigData('volume_validation/comprimento_max')
+                    || $itemComprimento < $this->getConfigData('volume_validation/comprimento_min')
+                    || ($itemAltura + $itemLargura + $itemComprimento) > $this->getConfigData('volume_validation/sum_max')
+                    || ($itemAltura + $itemLargura + $itemComprimento) < $this->getConfigData('volume_validation/sum_min')
+                ) {
                     return false;
-		}
+                }
+            }
 
-                
-		
-		$result = Mage::getModel('shipping/rate_result');
-		$error = Mage::getModel('shipping/rate_result_error');
-                
-		$error->setCarrier($this->_code);
-		$error->setCarrierTitle($this->getConfigData('title'));
+            $pesoCubicoTotal += (($itemAltura * $itemLargura * $itemComprimento) * $item->getQty()) / $this->getConfigData('coeficiente_volume');
+        }
 
+        $this->_volumeWeight = number_format($pesoCubicoTotal, 2, '.', '');
 
-		$packagevalue = $request->getBaseCurrency()->convert($request->getPackageValue(), $request->getPackageCurrency());
-		$minorderval = $this->getConfigData('min_order_value');
-		$maxorderval = $this->getConfigData('max_order_value');
-		if($packagevalue <= $minorderval || $packagevalue >= $maxorderval){
-			//Value limits
-                        Mage::log('PedroTeixeira_Correios: Value limits');
-			$error->setErrorMessage($this->getConfigData('valueerror'));
-			$result->append($error);
-			return $result;
-		}
+        return true;
+    }
 
-		$frompcode = Mage::getStoreConfig('shipping/origin/postcode', $this->getStore());
-		$topcode = $request->getDestPostcode();
-		
-		//Fix Zip Code
-		$frompcode = str_replace('-', '', trim($frompcode));
-		$topcode = str_replace('-', '', trim($topcode));
+    /**
+     * Generate free shipping for a product
+     *
+     * @param string $freeMethod
+     *
+     * @return void
+     */
+    protected function _setFreeMethodRequest($freeMethod)
+    {
+        $this->_freeMethodRequest       = true;
+        $this->_freeMethodRequestResult = Mage::getModel('shipping/rate_result');
 
-		if(!preg_match("/^([0-9]{8})$/", $topcode))
-		{
-			//Invalid Zip Code
-                        Mage::log('PedroTeixeira_Correios: Invalid Zip Code');
-			$error->setErrorMessage($this->getConfigData('zipcodeerror'));
-			$result->append($error);
-			Mage::helper('customer')->__('Invalid ZIP CODE');
-			return $result;
-		}
-		
-		
-		$sweight = $request->getPackageWeight();
-                $weightCompare = $this->getConfigData('maxweight');
-                
-                if($this->getConfigData('weight_type') == 'gr'){
-                    $sweight = number_format($sweight/1000, 2, '.', '');
-                    $weightCompare = number_format($weightCompare/1000, 2, '.', '');
+        $this->_postMethods        = $freeMethod;
+        $this->_postMethodsExplode = array($freeMethod);
+
+        if ($this->getConfigData('weight_type') == PedroTeixeira_Correios_Model_Source_WeightType::WEIGHT_GR) {
+            $this->_freeMethodWeight = number_format($this->_freeMethodWeight / 1000, 2, '.', '');
+        }
+
+        $this->_packageWeight = $this->_freeMethodWeight;
+        $this->_pacWeight     = $this->_freeMethodWeight;
+    }
+
+    /**
+     * Check if current carrier offer support to tracking
+     *
+     * @return bool true
+     */
+    public function isTrackingAvailable()
+    {
+        return true;
+    }
+
+    /**
+     * Get Tracking Info
+     *
+     * @param mixed $tracking
+     *
+     * @return mixed
+     */
+    public function getTrackingInfo($tracking)
+    {
+        $result = $this->getTracking($tracking);
+        if ($result instanceof Mage_Shipping_Model_Tracking_Result) {
+            if ($trackings = $result->getAllTrackings()) {
+                return $trackings[0];
+            }
+        } elseif (is_string($result) && !empty($result)) {
+            return $result;
+        }
+
+        return false;
+    }
+
+    /**
+     * Get Tracking
+     *
+     * @param array $trackings
+     *
+     * @return Mage_Shipping_Model_Tracking_Result
+     */
+    public function getTracking($trackings)
+    {
+        $this->_result = Mage::getModel('shipping/tracking_result');
+        foreach ((array) $trackings as $code) {
+            $this->_getTracking($code);
+        }
+
+        return $this->_result;
+    }
+
+    /**
+     * Protected Get Tracking, opens the request to Correios
+     *
+     * @param string $code
+     *
+     * @return bool
+     */
+    protected function _getTracking($code)
+    {
+        $error = Mage::getModel('shipping/tracking_result_error');
+        $error->setTracking($code);
+        $error->setCarrier($this->_code);
+        $error->setCarrierTitle($this->getConfigData('title'));
+        $error->setErrorMessage($this->getConfigData('urlerror'));
+
+        $url = 'http://websro.correios.com.br/sro_bin/txect01$.QueryList';
+        $url .= '?P_LINGUA=001&P_TIPO=001&P_COD_UNI=' . $code;
+        try {
+            $client = new Zend_Http_Client();
+            $client->setUri($url);
+            $content = $client->request();
+            $body    = $content->getBody();
+        } catch (Exception $e) {
+            $this->_result->append($error);
+            return false;
+        }
+
+        if (!preg_match('#<table ([^>]+)>(.*?)</table>#is', $body, $matches)) {
+            $this->_result->append($error);
+            return false;
+        }
+        $table = $matches[2];
+
+        if (!preg_match_all('/<tr>(.*)<\/tr>/i', $table, $columns, PREG_SET_ORDER)) {
+            $this->_result->append($error);
+            return false;
+        }
+
+        $progress = array();
+        for ($i = 0; $i < count($columns); $i++) {
+            $column = $columns[$i][1];
+
+            $description = '';
+            $found       = false;
+            if (preg_match('/<td rowspan="?2"?/i', $column) && preg_match(
+                    '/<td rowspan="?2"?>(.*)<\/td><td>(.*)<\/td><td><font color="[A-Z0-9]{6}">(.*)<\/font><\/td>/i',
+                    $column,
+                    $matches
+                )
+            ) {
+                if (preg_match('/<td colspan="?2"?>(.*)<\/td>/i', $columns[$i + 1][1], $matchesDescription)) {
+                    $description = str_replace('  ', '', $matchesDescription[1]);
                 }
 
+                $found = true;
+            } elseif (preg_match(
+                '/<td rowspan="?1"?>(.*)<\/td><td>(.*)<\/td><td><font color="[A-Z0-9]{6}">(.*)<\/font><\/td>/i',
+                $column,
+                $matches
+            )
+            ) {
+                $found = true;
+            }
 
-		if ($sweight > $weightCompare){
-			//Weight exceeded limit
-                        Mage::log('PedroTeixeira_Correios: Weight exceeded limit');
-			$error->setErrorMessage($this->getConfigData('maxweighterror'));
-			$result->append($error);
-			return $result;
-		}
+            if ($found) {
+                $datetime = explode(' ', $matches[1]);
+                $locale   = new Zend_Locale('pt_BR');
+                $date     = '';
+                $date     = new Zend_Date($datetime[0], 'dd/MM/YYYY', $locale);
 
+                $track = array(
+                    'deliverydate'     => $date->toString('YYYY-MM-dd'),
+                    'deliverytime'     => $datetime[1] . ':00',
+                    'deliverylocation' => htmlentities($matches[2]),
+                    'status'           => htmlentities($matches[3]),
+                    'activity'         => htmlentities($matches[3])
+                );
 
-                if ($sweight == 0){
-			//Weight zero
-                        Mage::log('PedroTeixeira_Correios: Weight zero');
-			$error->setErrorMessage($this->getConfigData('weightzeroerror'));
-			$result->append($error);
-			return $result;
-		}
-
-
-                //Create the volume of the cart
-
-                $pesoCubicoTotal = 0;
-                $volumeTotal = 0;
-
-                $items = Mage::getModel('checkout/cart')->getQuote()->getAllItems();
-                
-                foreach($items as $item){
-
-                    $while = 0;
-                    $_product = $item->getProduct();
-
-                    if($_product->getData('volume_altura') == '' || (int)$_product->getData('volume_altura') == 0)
-                        $itemAltura = $this->getConfigData('altura_padrao');
-                    else
-                        $itemAltura = $_product->getData('volume_altura');
-
-                    if($_product->getData('volume_largura') == '' || (int)$_product->getData('volume_largura') == 0)
-                        $itemLargura = $this->getConfigData('largura_padrao');
-                    else
-                        $itemLargura = $_product->getData('volume_largura');
-
-                    if($_product->getData('volume_comprimento') == '' || (int)$_product->getData('volume_comprimento') == 0)
-                        $itemComprimento = $this->getConfigData('comprimento_padrao');
-                    else
-                        $itemComprimento = $_product->getData('volume_comprimento');
-
-                    while($while < $item->getQty()){
-                        $itemPesoCubico = ($itemAltura * $itemLargura * $itemComprimento)/4800;
-                        $pesoCubicoTotal = $pesoCubicoTotal + $itemPesoCubico;
-                        $volumeTotal = $volumeTotal + ($itemPesoCubico * 4800);
-
-                        $while ++;
-                    }
+                if ($description !== '') {
+                    $track['activity'] = $matches[3] . ' - ' . htmlentities($description);
                 }
 
-                if($pesoCubicoTotal > $sweight){
-                    $mediaMedidas = round(pow((int)$volumeTotal, (1/3)));
-                    $volumeComprimento = (($mediaMedidas < 16) ? 16 : $mediaMedidas);
-                    $volumeAltura = (($mediaMedidas < 2) ? 2 : $mediaMedidas);
-                    $volumeLargura = (($mediaMedidas < 11) ? 11 : $mediaMedidas);
-                }else{
-                    $volumeComprimento = 16;
-                    $volumeAltura = 2;
-                    $volumeLargura = 11;
-                }
-		
-		//Define post method
-		$shipping_methods = array();
-		
-		$postmethods = explode(",", $this->getConfigData('postmethods'));
-		
-		foreach($postmethods as $methods)
-		{
-		
-			switch ($methods){
-                                        case 0:
-						$shipping_methods["40010"] = array ("Sedex", "3");
-						break;
-                                        case 1:
-						$shipping_methods["40096"] = array ("Sedex", "3");
-						break;
-                                        case 2:
-						$shipping_methods["81019"] = array ("E-Sedex", "3");
-						break;
-                                        case 3:
-						$shipping_methods["41025"] = array ("PAC", "3");
-						break;
-                                        case 4:
-						$shipping_methods["41106"] = array ("PAC", "3");
-						break;
-                                        case 5:
-						$shipping_methods["41068"] = array ("PAC", "3");
-						break;
-                                        case 6:
-						$shipping_methods["40215"] = array ("Sedex 10", "1");
-						break;
-                                        case 7:
-						$shipping_methods["40290"] = array ("Sedex HOJE", "1");
-						break;
-                                        case 8:
-						$shipping_methods["40045"] = array ("Sedex a Cobrar", "5");
-						break;
-			}
-		}
-		
-		foreach($shipping_methods as $shipping_method => $shipping_values){
+                $progress[] = $track;
+            }
+        }
 
-                    //Define URL method
-                    switch ($this->getConfigData('urlmethod')){
+        if (!empty($progress)) {
+            $track                   = $progress[0];
+            $track['progressdetail'] = $progress;
 
-                        case 1:
+            $tracking = Mage::getModel('shipping/tracking_result_status');
+            $tracking->setTracking($code);
+            $tracking->setCarrier('correios');
+            $tracking->setCarrierTitle($this->getConfigData('title'));
+            $tracking->addData($track);
 
-                            $correiosWSLocaWeb = "http://comercio.locaweb.com.br/correios/frete.asmx?WSDL";
+            $this->_result->append($tracking);
+            return true;
+        } else {
+            $this->_result->append($error);
+            return false;
+        }
+    }
 
-                            $soap = @new SoapClient($correiosWSLocaWeb, array(
-                                    'trace' => true,
-                                    'exceptions' => true,
-                                    'compression' => SOAP_COMPRESSION_ACCEPT | SOAP_COMPRESSION_GZIP,
-                                    'connection_timeout' => 1000
-                            ));
+    /**
+     * Returns the allowed carrier methods
+     *
+     * @return array
+     */
+    public function getAllowedMethods()
+    {
+        return array($this->_code => $this->getConfigData('title'));
+    }
 
-                            // Postagem dos parâmetros
-                            $parms = new ParametersLocaweb();
-                            $parms->cepOrigem = utf8_encode($frompcode);
-                            $parms->cepDestino = utf8_encode($topcode);
-                            $parms->peso = utf8_encode(str_replace(".",",",$sweight));
-                            $parms->volume = utf8_encode($volumeTotal);
-                            $parms->codigo = utf8_encode($shipping_method);
-
-                            // Resgata o valor calculado
-                            $resposta = $soap->Correios($parms);
-
-                            $shippingPrice = floatval(str_replace(",",".",$resposta->CorreiosResult));
-
-                            break;
-
-                        case 0:
-
-                            $filename = "http://shopping.correios.com.br/wbm/shopping/script/CalcPrecoPrazo.aspx";
-
-                            try {
-                                    $client = new Zend_Http_Client($filename);
-
-                                    $client->setParameterGet('StrRetorno', 'xml');
-                                    $client->setParameterGet('nCdServico', $shipping_method);
-                                    $client->setParameterGet('nVlPeso', $sweight);
-                                    $client->setParameterGet('sCepOrigem', $frompcode);
-                                    $client->setParameterGet('sCepDestino', $topcode);
-                                    $client->setParameterGet('nCdFormato',1);
-                                    $client->setParameterGet('nVlComprimento',$volumeComprimento);
-                                    $client->setParameterGet('nVlAltura',$volumeAltura);
-                                    $client->setParameterGet('nVlLargura',$volumeLargura);
-                                    if($this->getConfigData('mao_propria'))
-                                        $client->setParameterGet('sCdMaoPropria','S');
-                                    else
-                                        $client->setParameterGet('sCdMaoPropria','N');
-
-                                    if($this->getConfigData('aviso_recebimento'))
-                                        $client->setParameterGet('sCdAvisoRecebimento','S');
-                                    else
-                                        $client->setParameterGet('sCdAvisoRecebimento','N');
-
-                                    if($this->getConfigData('valor_declarado') || $shipping_method == 40045)
-                                        $client->setParameterGet('nVlValorDeclarado',number_format($packagevalue, 2, ',', '.'));
-                                    else
-                                        $client->setParameterGet('nVlValorDeclarado',0);
-
-
-
-                                    if($shipping_method == 40096 || $shipping_method == 81019  || $shipping_method == 41068){
-                                        if($this->getConfigData('cod_admin') == '' || $this->getConfigData('senha_admin') == ''){
-                                            // Need correios admin data
-                                            Mage::log('PedroTeixeira_Correios: Need correios admin data');
-                                            $error->setErrorMessage($this->getConfigData('coderror'));
-                                            $result->append($error);
-                                            return $result;
-                                        }else{
-                                            $client->setParameterGet('nCdEmpresa',$this->getConfigData('cod_admin'));
-                                            $client->setParameterGet('sDsSenha',$this->getConfigData('senha_admin'));
-                                        }
-                                    }
-
-                                    $content = $client->request();
-                                    $conteudo = $content->getBody();
-
-                                    if (!stristr($conteudo, "<?xml")){
-                                        throw new Exception("Not XML returned.");
-                                    }
-
-                            } catch (Exception $e) {
-                                    //URL Error
-                                    Mage::log('PedroTeixeira_Correios: URL Error');
-                                    $error = Mage::getModel('shipping/rate_result_error');
-                                    $error->setCarrier($this->_code);
-                                    $error->setCarrierTitle($this->getConfigData('title'));
-                                    $error->setMethod($shipping_method);
-                                    $error->setErrorMessage($this->getConfigData('urlerror'));
-                                    $result->append($error);
-                                    $shippingPrice = 0;
-
-                                    continue;
-                            };                            
-
-                            preg_match_all("/<Codigo>(.+)<\/Codigo>/", $conteudo, $xml_servico);
-                            preg_match_all("/<Valor>(.+)<\/Valor>/", $conteudo, $preco_postal);
-                            preg_match_all("/<PrazoEntrega>(.+)<\/PrazoEntrega>/", $conteudo, $prazo_postal);
-                            preg_match_all("/<Erro>(.+)<\/Erro>/", $conteudo, $err_id);
-                            $err_id = str_replace('-', '', $err_id[1][0]);
-                            $err_id = (int)$err_id;
-                            preg_match_all("/<MsgErro>(.+)<\/MsgErro>/", $conteudo, $err_msg);
-
-
-                            $correiosReturn = array(
-                                "prazo" => $prazo_postal[1][0]
-                            );
-
-                            if(trim($err_id) == "0"){
-                                $shippingPrice = floatval(str_replace(",",".",$preco_postal[1][0]));
-                            }else{
-
-                                $ignorar = explode(',',$this->getConfigData('ignorar_erro'));
-                                $ignorar = array_flip($ignorar);
-                                if(!array_key_exists($err_id, $ignorar)){
-                                    //Error
-                                    $error = Mage::getModel('shipping/rate_result_error');
-                                    $error->setCarrier($this->_code);
-                                    $error->setCarrierTitle($this->getConfigData('title'));
-                                    $error->setMethod($shipping_method);
-                                    
-                                    // Correios Error
-                                    Mage::log('PedroTeixeira_Correios: Correios Error');
-                                    $error->setErrorMessage(sprintf($this->getConfigData('correioserror'), $shipping_values[0], $err_msg[1][0], $err_id));
-                                    $result->append($error);
-                                    $shippingPrice = 0;
-                                }else{
-                                    $shippingPrice = 0;
-                                }
-                            }
-
-
-                            break;
-                        default:
-                            //URL method undefined
-                            Mage::log('PedroTeixeira_Correios: URL method undefined');
-                            $error->setErrorMessage($this->getConfigData('urlerror'));
-                            $result->append($error);
-                            return $result;
-                    }
-			
-                    if($shippingPrice <= 0){
-                            continue;
-                    }
-
-                    $method = Mage::getModel('shipping/rate_result_method');
-
-                    $method->setCarrier($this->_code);
-                    $method->setCarrierTitle($this->getConfigData('title'));
-
-                    $method->setMethod($shipping_method);
-
-                    if ($this->getConfigFlag('prazo_entrega')){
-
-                        if(isset($correiosReturn)){
-                            if($correiosReturn['prazo']  > 0){
-                                $method->setMethodTitle(sprintf($this->getConfigData('msgprazo'), $shipping_values[0], (int)$correiosReturn['prazo'] + $this->getConfigData('add_prazo')));
-                            }else{
-                                $method->setMethodTitle(sprintf($this->getConfigData('msgprazo'), $shipping_values[0], $shipping_values[1] + $this->getConfigData('add_prazo')));
-                            }
-                        }else{
-                            $method->setMethodTitle(sprintf($this->getConfigData('msgprazo'), $shipping_values[0], $shipping_values[1] + $this->getConfigData('add_prazo')));
-                        }
-
-                    }else{
-                            $method->setMethodTitle($shipping_values[0]);
-                    }
-
-                    $method->setPrice($shippingPrice + $this->getConfigData('handling_fee'));
-
-                    $method->setCost($shippingPrice);
-
-                    $result->append($method);
-
-                    $shippingPrice = null;
-
-		}
-		
-		$this->_result = $result;
-		
-		$this->_updateFreeMethodQuote($request);
-		
-		return $this->_result;
-	}
-
-	/**
-	 * Get Tracking Info
-	 *
-	 * @param mixed $tracking
-	 * @return mixed
-	 */
-	public function getTrackingInfo($tracking) {
-		$result = $this->getTracking($tracking);
-		if ($result instanceof Mage_Shipping_Model_Tracking_Result){
-			if ($trackings = $result->getAllTrackings()) {
-				return $trackings[0];
-			}
-		} elseif (is_string($result) && !empty($result)) {
-			return $result;
-		}
-
-		return false;
-	}
-
-	/**
-	 * Get Tracking
-	 *
-	 * @param array $trackings
-	 * @return Mage_Shipping_Model_Tracking_Result
-	 */
-	public function getTracking($trackings) {
-		$this->_result = Mage::getModel('shipping/tracking_result');
-		foreach ((array) $trackings as $code) {
-			$this->_getTracking($code);
-		}
-		return $this->_result;
-	}
-
-	/**
-	 * Protected Get Tracking, opens the request to Correios
-	 *
-	 * @param string $code
-	 * @return boolean
-	 */
-	protected function _getTracking($code) {
-		$error = Mage::getModel('shipping/tracking_result_error');
-		$error->setTracking($code);
-		$error->setCarrier($this->_code);
-		$error->setCarrierTitle($this->getConfigData('title'));
-		$error->setErrorMessage($this->getConfigData('urlerror'));
-
-		$url = 'http://websro.correios.com.br/sro_bin/txect01$.QueryList';
-		$url .= '?P_LINGUA=001&P_TIPO=001&P_COD_UNI=' . $code;
-		try {
-			$client = new Zend_Http_Client();
-			$client->setUri($url);
-			$content = $client->request();
-                        $body = $content->getBody();
-		} catch (Exception $e) {
-			$this->_result->append($error);
-			return false;
-		}
-
-		if (!preg_match('#<table ([^>]+)>(.*?)</table>#is', $body, $matches)) {
-			$this->_result->append($error);
-			return false;
-		}
-		$table = $matches[2];
-
-		if (!preg_match_all('/<tr>(.*)<\/tr>/i', $table, $columns, PREG_SET_ORDER)) {
-			$this->_result->append($error);
-			return false;
-		}
-
-		$progress = array();
-		for ($i = 0; $i < count($columns); $i++) {
-			$column = $columns[$i][1];
-
-			$description = '';
-			$found = false;
-			if (preg_match('/<td rowspan="?2"?/i', $column) && preg_match('/<td rowspan="?2"?>(.*)<\/td><td>(.*)<\/td><td><font color="[A-Z0-9]{6}">(.*)<\/font><\/td>/i', $column, $matches)) {
-				if (preg_match('/<td colspan="?2"?>(.*)<\/td>/i', $columns[$i+1][1], $matchesDescription)) {
-					$description = str_replace('  ', '', $matchesDescription[1]);
-				}
-
-				$found = true;
-			} elseif (preg_match('/<td rowspan="?1"?>(.*)<\/td><td>(.*)<\/td><td><font color="[A-Z0-9]{6}">(.*)<\/font><\/td>/i', $column, $matches)) {
-				$found = true;
-			}
-
-			if ($found) {
-				$datetime = split(' ', $matches[1]);
-
-				$locale = new Zend_Locale('pt_BR');
-				$date='';
-				$date = new Zend_Date($datetime[0], 'dd/MM/YYYY', $locale);
-
-				$track = array(
-					'deliverydate' => $date->toString('YYYY-MM-dd'),
-					'deliverytime' => $datetime[1] . ':00',
-					'deliverylocation' => htmlentities($matches[2]),
-					'status' => htmlentities($matches[3]),
-					'activity' => htmlentities($matches[3])
-				);                                
-
-				if ($description !== '') {
-					$track['activity'] = $matches[3] . ' - ' . htmlentities($description);
-				}
-
-				$progress[] = $track;
-			}
-		}
-
-		if (!empty($progress)) {
-			$track = $progress[0];
-			$track['progressdetail'] = $progress;
-
-			$tracking = Mage::getModel('shipping/tracking_result_status');
-			$tracking->setTracking($code);
-			$tracking->setCarrier('correios');
-			$tracking->setCarrierTitle($this->getConfigData('title'));
-			$tracking->addData($track);
-
-			$this->_result->append($tracking);
-			return true;
-		} else {
-			$this->_result->append($error);
-			return false;
-		}
-	}
-
-	/**
-	 * Returns the allowed carrier methods
-	 *
-	 * @return array
-	 */
-	public function getAllowedMethods()
-	{
-		return array($this->_code => $this->getConfigData('title'));
-	}
-
-	/**
-	 * Define ZIP Code as required
-	 *
-	 * @return boolean
-	 */
-	public function isZipCodeRequired()
-	{
-		return true;
-	}
-
+    /**
+     * Define ZIP Code as required
+     *
+     * @param string $countryId
+     *
+     * @return bool
+     */
+    public function isZipCodeRequired($countryId = null)
+    {
+        return true;
+    }
 }

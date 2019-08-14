@@ -1,21 +1,15 @@
 <?php
+
 /**
- * Pedro Teixeira
+ * This source file is subject to the MIT License.
+ * It is also available through http://opensource.org/licenses/MIT
  *
- * NOTICE OF LICENSE
- *
- * This source file is subject to the Open Software License (OSL).
- * It is also available through the world-wide-web at this URL:
- * http://opensource.org/licenses/osl-3.0.php
- *
- * @category   PedroTeixeira
- * @package    PedroTeixeira_Correios
- * @copyright  Copyright (c) 2010 Pedro Teixeira (http://www.pteixeira.com.br)
- * @author     Pedro Teixeira <pedro@pteixeira.com.br>
- * @license    http://opensource.org/licenses/osl-3.0.php  Open Software License (OSL 3.0)
+ * @category  PedroTeixeira
+ * @package   PedroTeixeira_Correios
+ * @copyright Copyright (c) 2014 Pedro Teixeira (http://pedroteixeira.io)
+ * @author    Pedro Teixeira <hello@pedroteixeira.io>
+ * @license   http://opensource.org/licenses/MIT
  */
- 
 class PedroTeixeira_Correios_Helper_Data extends Mage_Core_Helper_Abstract
 {
-
 }

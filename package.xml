@@ -1,33 +1,44 @@
 <?xml version="1.0"?>
 <package>
     <name>PedroTeixeira_Correios</name>
-    <version>4.0.0</version>
+    <version>4.3.0</version>
     <stability>stable</stability>
-    <license>GNU General Public License (GPL)</license>
+    <license uri="http://www.opensource.org/licenses/mit-license.php">MIT License</license>
     <channel>community</channel>
     <extends/>
     <summary>M&#xF3;dulo de c&#xE1;lculo de PAC, Sedex, E-Sedex, Sedex 10, Sedex Hoje e Sedex a Cobrar.</summary>
-    <description>M&#xF3;dulo totalmente compat&#xED;vel com o novo WebService dos Correios. Tamb&#xE9;m &#xE9; integrado com o WebService de c&#xE1;lculo de frete da Locaweb e hoje conta com os seguintes servi&#xE7;os:
-
-- Sedex Sem Contrato
-- Sedex Com Contrato
-- E-Sedex Com Contrato
-- PAC Sem Contrato
-- PAC Com Contrato
-- Sedex 10
-- Sedex HOJE
-- Sedex a Cobrar
-
-Conta com identifica&#xE7;&#xE3;o de erros dos Correios, fun&#xE7;&#xE3;o de ignorar determinados erros, m&#xE3;o pr&#xF3;pria, aviso de recebimento, valor declarado, captura do prazo de entrega dos Correios, adicionar mais dias ao prazo dos Correios, identifica o volume dos produtos por atributo e Tracking em tempo real.
-
-Na nova vers&#xE3;o conta com instala&#xE7;&#xE3;o automatica dos atributos de volume, corre&#xE7;&#xE3;o dos erros de getBody() e ereg(), configura&#xE7;&#xE3;o do formato de peso, nova forma de passar o volume para c&#xE1;lculo de PAC, log de erros e outras funcionalidades.
-
-Mais informa&#xE7;&#xF5;es em http://www.pteixeira.com.br</description>
-    <notes>M&#xF3;dulo de c&#xE1;lculo de PAC, Sedex, E-Sedex, Sedex 10, Sedex Hoje e Sedex a Cobrar.</notes>
-    <authors><author><name>Pedro Teixeira</name><user>auto-converted</user><email>teixeira.pedro@gmail.com</email></author></authors>
-    <date>2010-05-02</date>
-    <time>21:25:32</time>
-    <contents><target name="mage"><dir name="app"><dir name="etc"><dir name="modules"><file name="PedroTeixeira_Correios.xml" hash="f00c1a1ffcf9a08f67dbbdbd96da4eaf"/></dir></dir></dir></target><target name="magecommunity"><dir name="PedroTeixeira"><dir name="Correios"><dir name="etc"><file name="config.xml" hash="0b252ab5e22b204bb1b98f6d460f93f0"/><file name="system.xml" hash="53cecd039e5a003646cbfb4d26a9b8a8"/></dir><dir name="Helper"><file name="Data.php" hash="b1f56c64ef8b9fb7e8b26df9b4e44b3d"/></dir><dir name="Model"><dir name="Carrier"><file name="CorreiosMethod.php" hash="a52e4cb27a50a96e3b0170b11a03d962"/></dir><dir name="Source"><file name="FreeMethods.php" hash="4af2696b931eb73c4d8dfe53893a3a25"/><file name="PostMethods.php" hash="4ba41466c7e594e2d0aa3e14a0147d19"/><file name="UrlMethods.php" hash="02bf735b441af7bf9266632a978b0e62"/><file name="WeightType.php" hash="e77ee1d2fed0c623064dfc539e2ab8fe"/></dir></dir><dir name="sql"><dir name="pedroteixeira_correios_setup"><file name="mysql4-install-4.0.0.php" hash="85c10b59b0b09ef0347887d5c4b8a16d"/></dir></dir></dir></dir></target></contents>
+    <description>Vers&#xE3;o 4.3.0 do m&#xF3;dulo de c&#xE1;lculo de frete para Magento.&#xD;
+&#xD;
+Utilizando peso volum&#xE9;trico para c&#xE1;lculo de todos os servi&#xE7;os e compat&#xED;vel com a valida&#xE7;&#xE3;o de dimens&#xF5;es dos Correios. &#xD;
+&#xD;
+Servi&#xE7;os suportados:&#xD;
+&#xD;
+- Sedex Sem Contrato&#xD;
+- Sedex Com Contrato&#xD;
+- E-Sedex Com Contrato&#xD;
+- PAC Sem Contrato&#xD;
+- PAC Com Contrato&#xD;
+- Sedex 10&#xD;
+- Sedex HOJE&#xD;
+- Sedex a Cobrar&#xD;
+&#xD;
+Conta com identifica&#xE7;&#xE3;o de erros dos Correios, m&#xE3;o pr&#xF3;pria, aviso de recebimento, valor declarado, captura do prazo de entrega dos Correios, adicionar mais dias ao prazo dos Correios, identifica o volume dos produtos por atributo e Tracking em tempo real.&#xD;
+&#xD;
+Mais informa&#xE7;&#xF5;es em http://pedroteixeira.io</description>
+    <notes>Bugfix:&#xD;
+&#xD;
+- Assinatura do m&#xE9;todo isZipCodeRequired() foi alterada&#xD;
+&#xD;
+Feature:&#xD;
+&#xD;
+- Revis&#xE3;o do code style&#xD;
+- Documenta&#xE7;&#xE3;o em markdown&#xD;
+- Novos c&#xF3;digos de erros dos Correios&#xD;
+- Novos limites de dimens&#xE3;o dos Correios</notes>
+    <authors><author><name>Pedro Teixeira</name><user>teixeirapedro</user><email>hello@pedroteixeira.io</email></author></authors>
+    <date>2014-08-03</date>
+    <time>22:56:30</time>
+    <contents><target name="magecommunity"><dir name="PedroTeixeira"><dir name="Correios"><dir name="Helper"><file name="Data.php" hash="3cad79e9b6499ad762d5b52cffc309b8"/></dir><dir name="Model"><dir name="Carrier"><file name="CorreiosMethod.php" hash="9b72318b51409857321ed524b75e6641"/></dir><dir name="Source"><file name="PostMethods.php" hash="ae6eff9ea069080f6a77e19a37290887"/><file name="WeightType.php" hash="e49300e3836905862ae19e9add86bf96"/></dir></dir><dir name="etc"><file name="config.xml" hash="796ef0d67c95af6a2c7c557ead7e659d"/><file name="system.xml" hash="87bf5a7eb8f7231df063453968f82c8b"/></dir><dir name="sql"><dir name="pedroteixeira_correios_setup"><file name="install-4.0.0.php" hash="63f35dbcdcae0d1430afc2afdd51ab97"/><file name="upgrade-4.0.0-4.1.0.php" hash="0734387a4591ef680cea2c2148e04582"/><file name="upgrade-4.1.0-4.2.0.php" hash="a075e89ea6ced350b18eeae9e9ec7eaf"/></dir></dir></dir></dir></target><target name="mageetc"><dir name="modules"><file name="PedroTeixeira_Correios.xml" hash="f49af429aed120dbb234cf0c0a99377d"/></dir></target></contents>
     <compatible/>
-    <dependencies/>
+    <dependencies><required><php><min>5.2.0</min><max>6.0.0</max></php></required></dependencies>
 </package>

@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<package>
+    <name>PedroTeixeira_Correios</name>
+    <version>4.0.0</version>
+    <stability>stable</stability>
+    <license>GNU General Public License (GPL)</license>
+    <channel>community</channel>
+    <extends/>
+    <summary>M&#xF3;dulo de c&#xE1;lculo de PAC, Sedex, E-Sedex, Sedex 10, Sedex Hoje e Sedex a Cobrar.</summary>
+    <description>M&#xF3;dulo totalmente compat&#xED;vel com o novo WebService dos Correios. Tamb&#xE9;m &#xE9; integrado com o WebService de c&#xE1;lculo de frete da Locaweb e hoje conta com os seguintes servi&#xE7;os:
+
+- Sedex Sem Contrato
+- Sedex Com Contrato
+- E-Sedex Com Contrato
+- PAC Sem Contrato
+- PAC Com Contrato
+- Sedex 10
+- Sedex HOJE
+- Sedex a Cobrar
+
+Conta com identifica&#xE7;&#xE3;o de erros dos Correios, fun&#xE7;&#xE3;o de ignorar determinados erros, m&#xE3;o pr&#xF3;pria, aviso de recebimento, valor declarado, captura do prazo de entrega dos Correios, adicionar mais dias ao prazo dos Correios, identifica o volume dos produtos por atributo e Tracking em tempo real.
+
+Na nova vers&#xE3;o conta com instala&#xE7;&#xE3;o automatica dos atributos de volume, corre&#xE7;&#xE3;o dos erros de getBody() e ereg(), configura&#xE7;&#xE3;o do formato de peso, nova forma de passar o volume para c&#xE1;lculo de PAC, log de erros e outras funcionalidades.
+
+Mais informa&#xE7;&#xF5;es em http://www.pteixeira.com.br</description>
+    <notes>M&#xF3;dulo de c&#xE1;lculo de PAC, Sedex, E-Sedex, Sedex 10, Sedex Hoje e Sedex a Cobrar.</notes>
+    <authors><author><name>Pedro Teixeira</name><user>auto-converted</user><email>teixeira.pedro@gmail.com</email></author></authors>
+    <date>2010-05-02</date>
+    <time>21:25:32</time>
+    <contents><target name="mage"><dir name="app"><dir name="etc"><dir name="modules"><file name="PedroTeixeira_Correios.xml" hash="f00c1a1ffcf9a08f67dbbdbd96da4eaf"/></dir></dir></dir></target><target name="magecommunity"><dir name="PedroTeixeira"><dir name="Correios"><dir name="etc"><file name="config.xml" hash="0b252ab5e22b204bb1b98f6d460f93f0"/><file name="system.xml" hash="53cecd039e5a003646cbfb4d26a9b8a8"/></dir><dir name="Helper"><file name="Data.php" hash="b1f56c64ef8b9fb7e8b26df9b4e44b3d"/></dir><dir name="Model"><dir name="Carrier"><file name="CorreiosMethod.php" hash="a52e4cb27a50a96e3b0170b11a03d962"/></dir><dir name="Source"><file name="FreeMethods.php" hash="4af2696b931eb73c4d8dfe53893a3a25"/><file name="PostMethods.php" hash="4ba41466c7e594e2d0aa3e14a0147d19"/><file name="UrlMethods.php" hash="02bf735b441af7bf9266632a978b0e62"/><file name="WeightType.php" hash="e77ee1d2fed0c623064dfc539e2ab8fe"/></dir></dir><dir name="sql"><dir name="pedroteixeira_correios_setup"><file name="mysql4-install-4.0.0.php" hash="85c10b59b0b09ef0347887d5c4b8a16d"/></dir></dir></dir></dir></target></contents>
+    <compatible/>
+    <dependencies/>
+</package>

@@ -89,7 +89,7 @@ class PedroTeixeira_Correios_Model_Carrier_CorreiosMethod
         }
 
         if ($this->_packageWeight == 0) {
-            $this->_packageWeight = $this->_getNominalWeight();
+            $this->_packageWeight = $this->_getNominalWeight($request);
         }
 
         if ($this->getConfigData('weight_type') == PedroTeixeira_Correios_Model_Source_WeightType::WEIGHT_GR) {
@@ -107,40 +107,66 @@ class PedroTeixeira_Correios_Model_Carrier_CorreiosMethod
         $this->_postMethodsExplode = explode(',', $this->getConfigData('postmethods'));
 
         // Generate Volume Weight
-        if ($this->_generateVolumeWeight() === false || $this->_removeInvalidServices() === false) {
+        if ($this->_generateVolumeWeight($request) === false || $this->_removeInvalidServices() === false) {
             $this->_throwError('dimensionerror', 'Dimension error', __LINE__);
             return $this->_result;
         }
 
-        $this->_filterMethodByItemRestriction();
-        if ($this->_getQuotes()->getError()) {
-            return $this->_result;
+        $this->_filterMethodByItemRestriction($request);
+
+        if (empty($this->_postMethods)) {
+            return false;
         }
+        //Show Quotes
+        $this->_getQuotes();
 
         // Use descont codes
         $this->_updateFreeMethodQuote($request);
 
         return $this->_result;
     }
-    
+
+    /**
+     * Retrieve all visible items from request
+     *
+     * @param Mage_Shipping_Model_Rate_Request $request Mage request
+     *
+     * @return array
+     */
+    protected function _getRequestItems($request)
+    {
+
+        $allItems = $request->getAllItems();
+        $items = array();
+
+        foreach ( $allItems as $item ) {
+            if ( !$item->getParentItemId() ) {
+                $items[] = $item;
+            }
+        }
+
+        $items = $this->_loadBundleChildren($items);
+
+        return $items;
+    }
+
     /**
     * Gets Nominal Weight
     *
+    * @param Mage_Shipping_Model_Rate_Request $request Mage request
+    *
     * @return number
     */
-    protected function _getNominalWeight()
+    protected function _getNominalWeight($request)
     {
         $weight = 0;
-        $quote = Mage::getSingleton('checkout/cart')->getQuote();
-        if (count($quote->getAllVisibleItems()) == 0) {
-            $quote = Mage::getSingleton('adminhtml/session_quote')->getQuote();
+        $items = $this->_getRequestItems($request);
+
+        foreach ($items as $item) {
+            $product = Mage::getModel('catalog/product')->load($item->getProductId());
+            $weight += $product->getWeight();
         }
-        if ($quote->isNominal()) {
-            foreach ($quote->getAllVisibleItems() as $item) {
-                $product = Mage::getModel('catalog/product')->load($item->getProductId());
-                $weight += $product->getWeight();
-            }
-        }
+
         return $weight;
     }
 
@@ -155,40 +181,22 @@ class PedroTeixeira_Correios_Model_Carrier_CorreiosMethod
         $correiosReturn = $this->_getCorreiosReturn();
 
         if ($correiosReturn !== false) {
-
+            $errorList = array();
             $correiosReturn = $this->_addPostMethods($correiosReturn);
-            $existReturn    = false;
 
             foreach ($correiosReturn as $servicos) {
 
                 $errorId = (string) $servicos->Erro;
+                $errorList[$errorId] = $servicos->MsgErro;
 
                 if ($errorId != '0' && !in_array($errorId, $softErrors)) {
                     continue;
                 }
 
-                $stringPrice   = (string) $servicos->Valor;
-                $stringPrice   = str_replace('.', '', $stringPrice);
-                $stringPrice   = str_replace(',', '.', $stringPrice);
-                $shippingPrice = floatval($stringPrice);
-                $shippingPrice *= pow(2, $this->_splitUp);
-                $shippingDelivery = (int) $servicos->PrazoEntrega;
-
-                if ($shippingPrice <= 0) {
-                    continue;
-                }
-
-                $this->_appendShippingReturn((string) $servicos->Codigo, $shippingPrice, $shippingDelivery);
-                if ($this->getConfigFlag('show_soft_errors') && !isset($isWarnAppended)) {
-                    $isWarnAppended = $this->_appendShippingWarning($servicos);
-                }
-                $existReturn = true;
+                $servicos->Valor = $this->_getFormatPrice((string) $servicos->Valor);
+                $this->_appendShippingReturn($servicos);
             }
-
-            if ($existReturn === false) {
-                $this->_throwError('urlerror', 'URL Error, all services return with error', __LINE__);
-                return $this->_result;
-            }
+            $this->_appendShippingErrors($errorList);
         } else {
             return $this->_result;
         }
@@ -233,6 +241,10 @@ class PedroTeixeira_Correios_Model_Carrier_CorreiosMethod
 
         if (!preg_match('/^([0-9]{8})$/', $this->_fromZip)) {
             Mage::log('pedroteixeira_correios: From ZIP Code Error');
+            return false;
+        }
+
+        if (!trim($this->_toZip)) {
             return false;
         }
 
@@ -342,18 +354,23 @@ class PedroTeixeira_Correios_Model_Carrier_CorreiosMethod
     /**
      * Apend shipping value to return
      *
-     * @param string $shippingMethod   Method of shipping
-     * @param int    $shippingPrice    Price
-     * @param int    $correiosDelivery Delivery date
+     * @param SimpleXMLElement $servico Service Data
      *
      * @return void
      */
-    protected function _appendShippingReturn($shippingMethod, $shippingPrice = 0, $correiosDelivery = 0)
+    protected function _appendShippingReturn(SimpleXMLElement $servico)
     {
+        $correiosDelivery = (int) $servico->PrazoEntrega;
+        $shippingMethod   = (string) $servico->Codigo;
+        $shippingPrice    = (float) $servico->Valor;
+        if ($shippingPrice <= 0) {
+            return;
+        }
 
+        $errorMsg = $this->_getSoftErrorMsg((string) $servico->Erro);
         $method = Mage::getModel('shipping/rate_result_method');
         $method->setCarrier($this->_code);
-        $method->setCarrierTitle($this->getConfigData('title'));
+        $method->setCarrierTitle($this->getConfigData('title') . $this->_getSplitUpMsg() . $errorMsg);
         $method->setMethod($shippingMethod);
 
         $shippingCost  = $shippingPrice;
@@ -431,17 +448,15 @@ class PedroTeixeira_Correios_Model_Carrier_CorreiosMethod
     /**
      * Generate Volume weight
      *
+     * @param Mage_Shipping_Model_Rate_Request $request Mage request
+     *
      * @return bool
      */
-    protected function _generateVolumeWeight()
+    protected function _generateVolumeWeight($request)
     {
         $pesoCubicoTotal = 0;
 
-        $items = Mage::getModel('checkout/cart')->getQuote()->getAllVisibleItems();
-
-        if (count($items) == 0) {
-            $items = Mage::getSingleton('adminhtml/session_quote')->getQuote()->getAllVisibleItems();
-        }
+        $items = $this->_getRequestItems($request);
 
         foreach ($items as $item) {
             $_product = $item->getProduct();
@@ -486,7 +501,7 @@ class PedroTeixeira_Correios_Model_Carrier_CorreiosMethod
 
             $itemAltura = $this->_getFitHeight($item);
             $pesoCubicoTotal += (($itemAltura * $itemLargura * $itemComprimento) *
-                    $item->getQty()) / $this->getConfigData('coeficiente_volume');
+                    $item->getTotalQty()) / $this->getConfigData('coeficiente_volume');
 
             $this->_postingDays = max($this->_postingDays, (int) $_product->getData('posting_days'));
         }
@@ -721,7 +736,7 @@ class PedroTeixeira_Correios_Model_Carrier_CorreiosMethod
         $tmpMethods = $this->_postMethodsExplode;
         $tmpMethods = $this->_filterMethodByConfigRestriction($tmpMethods);
         $isDivisible = (count($tmpMethods) == 0);
-        
+
         if ($isDivisible) {
             return $this->_splitPack();
         }
@@ -761,6 +776,9 @@ class PedroTeixeira_Correios_Model_Carrier_CorreiosMethod
     protected function _addPostMethods($cServico)
     {
         $addMethods = $this->getConfigData("add_postmethods");
+        if (empty($addMethods) || !is_array($addMethods)) {
+            return $cServico;
+        }
         foreach ($addMethods as $configData) {
             $isValid = true;
             $isValid &= $this->_packageWeight >= $configData['from']['weight'];
@@ -808,17 +826,15 @@ class PedroTeixeira_Correios_Model_Carrier_CorreiosMethod
      *  ...
      *  value 99: 81019
      *
+     * @param Mage_Shipping_Model_Rate_Request $request Mage request
+     *
      * @return PedroTeixeira_Correios_Model_Carrier_CorreiosMethod
      */
-    protected function _filterMethodByItemRestriction()
+    protected function _filterMethodByItemRestriction($request)
     {
         if ($this->getConfigFlag('filter_by_item')) {
-            $items = Mage::getSingleton('checkout/cart')->getQuote()->getAllVisibleItems();
 
-            if (count($items) == 0) {
-                $items = Mage::getSingleton('adminhtml/session_quote')->getQuote()->getAllVisibleItems();
-            }
-
+            $items = $this->_getRequestItems($request);
             $intersection = $this->_postMethodsExplode;
             foreach ($items as $item) {
                 $product         = Mage::getModel('catalog/product')->load($item->getProductId());
@@ -887,9 +903,9 @@ class PedroTeixeira_Correios_Model_Carrier_CorreiosMethod
     /**
      * Receive a list of methods, and validate one-by-one using the config settings.
      * Returns a list of valid methods or empty.
-     * 
+     *
      * @param array $postmethods Services List
-     * 
+     *
      * @return array
      */
     protected function _filterMethodByConfigRestriction($postmethods)
@@ -913,9 +929,9 @@ class PedroTeixeira_Correios_Model_Carrier_CorreiosMethod
     /**
      * Loads the zip range list.
      * Returns TRUE only if zip target is included in the range.
-     * 
+     *
      * @param array $method Current Post Method
-     * 
+     *
      * @return boolean
      */
     protected function _validateZipRestriction($method)
@@ -934,23 +950,116 @@ class PedroTeixeira_Correios_Model_Carrier_CorreiosMethod
     }
 
     /**
-     * Add a warning message at the top of the shipping method list.
+     * Some special errors must be sent to users.
+     * If not applicable, the default error will be sent.
      *
-     * @param SimpleXMLElement $servico Post Method
+     * @param array $errorList Error List
      *
      * @return boolean
      */
-    protected function _appendShippingWarning(SimpleXMLElement $servico)
+    protected function _appendShippingErrors($errorList)
     {
-        $id = (string) $servico->Erro;
-        $ids = explode(',', $this->getConfigData('soft_errors'));
-        if (in_array($id, $ids)) {
-            $error = Mage::getModel('shipping/rate_result_error');
-            $error->setCarrier($this->_code);
-            $error->setErrorMessage($servico->MsgErro);
-            $this->_result->append($error);
-            return true;
+        $output = false;
+        $successCode = '0';
+        $hasValidQuote = array_key_exists($successCode, $errorList);
+        if (!$hasValidQuote) {
+            $displayErrorList = explode(',', $this->getConfigData('hard_errors'));
+            if ($this->getConfigFlag('show_soft_errors')) {
+                $softErrorList = explode(',', $this->getConfigData('soft_errors'));
+                $displayErrorList = array_merge($displayErrorList, $softErrorList);
+            }
+            foreach ($errorList as $errorCode => $errorMsg) {
+                $isDisplayError = in_array($errorCode, $displayErrorList);
+                if ($isDisplayError) {
+                    $error = Mage::getModel('shipping/rate_result_error');
+                    $error->setCarrier($this->_code);
+                    $error->setErrorMessage($errorMsg);
+                    $this->_result->append($error);
+                    $output = true;
+                }
+            }
+            if (!$output) {
+                $logMsg = implode(',', $errorList);
+                Mage::log("{$this->_code}: Warning! There is no valid quotes, and no one error was throwed: {$logMsg}");
+            }
         }
-        return false;
+        return $output;
+    }
+
+    /**
+     * Returns a short message showing the number of the packs that will be needed.
+     *
+     * @return string
+     */
+    protected function _getSplitUpMsg()
+    {
+        $msg = "";
+        if ($this->_splitUp > 0) {
+            $qty = pow(2, $this->_splitUp);
+            $msg.= " / {$qty} volumes";
+        }
+        return $msg;
+    }
+
+    /**
+     * Returns a short warning message.
+     *
+     * @param string $error Error Id
+     *
+     * @return string
+     */
+    protected function _getSoftErrorMsg($error)
+    {
+        $msg = "";
+        if ($this->getConfigFlag('show_soft_errors')) {
+            $softErrorList = explode(',', $this->getConfigData('soft_errors'));
+            $isSoftError = in_array($error, $softErrorList);
+            if ($isSoftError) {
+                $msg.= " / Área de Risco";
+            }
+        }
+        return $msg;
+    }
+
+    /**
+     * Returns the price as float, and fixed by pack division.
+     *
+     * @param string $price Price String
+     *
+     * @return float
+     */
+    protected function _getFormatPrice($price)
+    {
+        $stringPrice = str_replace('.', '', $price);
+        $stringPrice = str_replace(',', '.', $stringPrice);
+        $shippingPrice = floatval($stringPrice);
+        $shippingPrice *= pow(2, $this->_splitUp);
+        return $shippingPrice;
+    }
+
+    /**
+     * Filter visible and bundle children products.
+     *
+     * @param array $items Product Items
+     *
+     * @return array
+     */
+    protected function _loadBundleChildren($items)
+    {
+        $visibleAndBundleChildren = array();
+        /* @var $item Mage_Sales_Model_Quote_Item */
+        foreach ($items as $item) {
+            $product = $item->getProduct();
+            $isBundle = ($product->getTypeId() == Mage_Catalog_Model_Product_Type::TYPE_BUNDLE);
+            if ($isBundle) {
+                /* @var $child Mage_Sales_Model_Quote_Item */
+                foreach ($item->getChildren() as $child) {
+                    $visibleAndBundleChildren[] = $child;
+                }
+            } else {
+                $visibleAndBundleChildren[] = $item;
+            }
+        }
+        return $visibleAndBundleChildren;
     }
 }

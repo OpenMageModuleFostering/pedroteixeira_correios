@@ -11,6 +11,3 @@
  * @license   http://opensource.org/licenses/MIT MIT
  * @link      https://github.com/pedro-teixeira/correios
  */
-class PedroTeixeira_Correios_Helper_Data extends Mage_Core_Helper_Abstract
-{
-}

@@ -3,7 +3,7 @@
     "type": "magento-module",
     "license": "MIT-License",
     "homepage": "",
-    "description": "Módulo de cálculo de PAC, Sedex, E-Sedex, Sedex 10, Sedex Hoje e Sedex a Cobrar.",
+    "description": "Módulo de cálculo de PAC, Sedex, E-Sedex, Sedex 10, Sedex Hoje, Sedex a Cobrar, PAC GF e Carta Comercial.",
     "authors": [
     {
         "name": "Pedro Teixeira",

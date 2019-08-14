@@ -6,9 +6,10 @@
  *
  * @category  PedroTeixeira
  * @package   PedroTeixeira_Correios
- * @copyright Copyright (c) 2014 Pedro Teixeira (http://pedroteixeira.io)
  * @author    Pedro Teixeira <hello@pedroteixeira.io>
- * @license   http://opensource.org/licenses/MIT
+ * @copyright 2015 Pedro Teixeira (http://pedroteixeira.io)
+ * @license   http://opensource.org/licenses/MIT MIT
+ * @link      https://github.com/pedro-teixeira/correios
  */
 -->
 <config>
@@ -30,6 +31,7 @@
                                 <p>Lembre-se de configurar as "Definições de Envio" no menu ao lado esquerdo.</p>
                                 <p>Para serviços que tenham em seu nome "Com Contrato", é necessário configurar o "Código Administrativo dos Correios" e "Senha Administrativa dos Correios".</p>
                                 <p>Para utilizar as regras de desconto de frete, você deve configurar o "Serviço para entrega gratuita", lembre-se de habilitar o serviço.</p>
+                                <p>Agradecimento especial para todos os <a href="https://github.com/pedro-teixeira/correios/graphs/contributors" target="_blank">contribuidores</a>.</p>
                                 <p>Pedro Teixeira [<a href="http://pedroteixeira.io/" target="_blank">pedroteixeira.io</a> ]</p>
                                 <br />
                                 <hr />
@@ -216,15 +218,6 @@
                             <show_in_website>1</show_in_website>
                             <show_in_store>1</show_in_store>
                         </max_order_value>
-                        <maxweight translate="label">
-                            <label>Peso Máximo Permitido Pelos Correios</label>
-                            <frontend_type>text</frontend_type>
-                            <sort_order>150</sort_order>
-                            <show_in_default>1</show_in_default>
-                            <show_in_website>1</show_in_website>
-                            <show_in_store>1</show_in_store>
-                            <comment>Utilize o mesmo formato de peso configurado no módulo, kilos ou gramas.</comment>
-                        </maxweight>
                         <handling_fee translate="label">
                             <label>Taxa de Postagem</label>
                             <frontend_type>text</frontend_type>
@@ -275,14 +268,6 @@
                             <show_in_website>1</show_in_website>
                             <show_in_store>1</show_in_store>
                         </zipcodeerror>
-                        <maxweighterror translate="label">
-                            <label>Mensagem de Peso Fora do Permitido</label>
-                            <frontend_type>textarea</frontend_type>
-                            <sort_order>220</sort_order>
-                            <show_in_default>1</show_in_default>
-                            <show_in_website>1</show_in_website>
-                            <show_in_store>1</show_in_store>
-                        </maxweighterror>
                         <weightzeroerror translate="label">
                             <label>Mensagem de Peso Zero</label>
                             <frontend_type>textarea</frontend_type>
@@ -319,6 +304,36 @@
                                 mostrar as mensagens de erro?
                             </comment>
                         </showmethod>
+                        <filter_by_item translate="label">
+                            <label>Habilitar Filtro de Serviços por Produto</label>
+                            <frontend_type>select</frontend_type>
+                            <source_model>adminhtml/system_config_source_yesno</source_model>
+                            <sort_order>265</sort_order>
+                            <show_in_default>1</show_in_default>
+                            <show_in_website>1</show_in_website>
+                            <show_in_store>1</show_in_store>
+                            <comment>A cotação irá exibir somente os serviços de postagem comuns a todos os produtos do carrinho de compras.</comment>
+                        </filter_by_item>
+                        <cache_mode translate="label">
+                            <label>Modo de Prioridade da Cache</label>
+                            <frontend_type>select</frontend_type>
+                            <source_model>PedroTeixeira_Correios_Model_Source_CacheMode</source_model>
+                            <sort_order>267</sort_order>
+                            <show_in_default>1</show_in_default>
+                            <show_in_website>1</show_in_website>
+                            <show_in_store>1</show_in_store>
+                            <comment>Esta configuração se aplica somente quando Correios Cache estiver ativo, em Sistema > Gerenciar Cache.</comment>
+                        </cache_mode>
+                        <split_pack translate="label">
+                            <label>Habilitar Divisão de Pacotes</label>
+                            <frontend_type>select</frontend_type>
+                            <source_model>adminhtml/system_config_source_yesno</source_model>
+                            <sort_order>268</sort_order>
+                            <show_in_default>1</show_in_default>
+                            <show_in_website>1</show_in_website>
+                            <show_in_store>1</show_in_store>
+                            <comment>O pacote é dividido, caso o carrinho exceda os limites de peso e tamanho, para todos os serviços. A divisão se repete até que os limites sejam válidos, para um ou mais serviços.</comment>
+                        </split_pack>
                         <sort_order translate="label">
                             <label>Ordenar Por</label>
                             <frontend_type>text</frontend_type>

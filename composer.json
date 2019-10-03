@@ -1,16 +1,19 @@
 {
-    "name": "OpenMageModuleFostering/PedroTeixeira_Correios",
+    "name": "OpenMageModuleFostering\/PedroTeixeira_Correios",
     "type": "magento-module",
     "license": "MIT-License",
     "homepage": "",
-    "description": "Módulo de cálculo de PAC, Sedex, E-Sedex, Sedex 10, Sedex Hoje, Sedex a Cobrar, PAC GF e Carta Comercial.",
+    "description": "M\u00f3dulo de c\u00e1lculo de PAC, Sedex, E-Sedex, Sedex 10, Sedex Hoje, Sedex a Cobrar, PAC GF e Carta Comercial.",
     "authors": [
-    {
-        "name": "Pedro Teixeira",
-        "email": "hello@pedroteixeira.io"
-    }
-],
+        {
+            "name": "Pedro Teixeira",
+            "email": "hello@pedroteixeira.io"
+        }
+    ],
     "suggest": {
-        "magento-hackathon/magento-composer-installer": "*"
-    }
+        "magento-hackathon\/magento-composer-installer": "*"
+    },
+    "keywords": [
+        "openmage-module"
+    ]
 }
